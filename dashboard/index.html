@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>kdb+/q Quant Platform — Live Tick Plant, LOB, TCA & Surveillance</title>
+  <style>
+    :root {
+      --bg: #0b0f17;
+      --panel: #131a26;
+      --border: #232f46;
+      --text: #e2e8f0;
+      --muted: #8b9bb4;
+      --bid: #10b981;
+      --ask: #f43f5e;
+      --accent: #38bdf8;
+      --warn: #f59e0b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, monospace;
+      background: var(--bg);
+      color: var(--text);
+      padding: 16px;
+      font-size: 13px;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      padding: 12px 18px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+    }
+    .title-group h1 { font-size: 16px; font-weight: 700; color: var(--accent); }
+    .title-group p { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .controls { display: flex; gap: 10px; align-items: center; }
+    select, input, button {
+      background: #1c2638;
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 6px 10px;
+      border-radius: 5px;
+      font-family: inherit;
+      font-size: 12px;
+    }
+    button { cursor: pointer; font-weight: 600; background: #0284c7; border-color: #0369a1; }
+    button:hover { background: #0369a1; }
+    .badge {
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .badge.ok { background: rgba(16,185,129,0.18); color: var(--bid); }
+    .badge.sim { background: rgba(56,189,248,0.18); color: var(--accent); }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1.2fr 1.2fr;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .panel h2 {
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-between;
+    }
+    table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+    th, td { padding: 6px 8px; text-align: right; border-bottom: 1px solid rgba(255,255,255,0.04); }
+    th:first-child, td:first-child { text-align: left; }
+    th { color: var(--muted); font-size: 11px; font-weight: 600; }
+    .bid-px { color: var(--bid); font-weight: 600; }
+    .ask-px { color: var(--ask); font-weight: 600; }
+    .kpi-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .kpi {
+      background: #0e141f;
+      border: 1px solid var(--border);
+      padding: 8px;
+      border-radius: 6px;
+    }
+    .kpi .lbl { font-size: 10px; color: var(--muted); }
+    .kpi .val { font-size: 14px; font-weight: 700; margin-top: 3px; }
+    .sev-CRITICAL { color: #f43f5e; font-weight: 700; }
+    .sev-HIGH { color: #f59e0b; font-weight: 700; }
+    .sev-MEDIUM { color: #38bdf8; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="title-group">
+      <h1>kdb+/q Quantitative Trading & Market Surveillance Platform</h1>
+      <p>Real-Time Tick Plant (TP/RDB/HDB/RTE) • L3→L2 Order Book Reconstruction • Vectorized TCA (`aj`/`wj1`) • CEP Abuse Detection</p>
+    </div>
+    <div class="controls">
+      <span id="connStatus" class="badge sim">SIMULATED STREAM (WS Fallback)</span>
+      <select id="symSelect">
+        <option value="BTCUSD">BTCUSD</option>
+        <option value="ETHUSD">ETHUSD</option>
+        <option value="SOLUSD">SOLUSD</option>
+        <option value="NVDA">NVDA</option>
+        <option value="AAPL">AAPL</option>
+      </select>
+      <input id="wsUrl" type="text" value="ws://localhost:5013" style="width:165px;" />
+      <button onclick="connectKdb()">Connect kdb+ RTE</button>
+    </div>
+  </header>
+
+  <div class="grid">
+    <!-- Panel 1: Reconstructed L2 Limit Order Book & Microstructure -->
+    <div class="panel">
+      <h2>
+        <span>L2 Reconstructed Order Book (`lob.q`)</span>
+        <span id="lobSym">BTCUSD</span>
+      </h2>
+      <div class="kpi-row">
+        <div class="kpi"><div class="lbl">Mid Price</div><div class="val" id="kpiMid">68,500.25</div></div>
+        <div class="kpi"><div class="lbl">Microprice</div><div class="val" id="kpiMicro">68,500.41</div></div>
+        <div class="kpi"><div class="lbl">Spread (bps)</div><div class="val" id="kpiSpread">1.46</div></div>
+        <div class="kpi"><div class="lbl">L1 Imbalance</div><div class="val" id="kpiImb">+0.24</div></div>
+      </div>
+      <table>
+        <thead>
+          <tr><th>Lvl</th><th>Bid Size</th><th>Bid Price</th><th>Ask Price</th><th>Ask Size</th></tr>
+        </thead>
+        <tbody id="lobBody"></tbody>
+      </table>
+    </div>
+
+    <!-- Panel 2: TCA Parent Order & Post-Trade Markouts -->
+    <div class="panel">
+      <h2>
+        <span>TCA Interval `wj1` & Markout `aj` (`tca.q`)</span>
+        <span>Basis Points (bps)</span>
+      </h2>
+      <table>
+        <thead>
+          <tr><th>Parent ID</th><th>Sym</th><th>Algo</th><th>Side</th><th>Qty</th><th>IS (bps)</th><th>vs VWAP</th><th>+1s Markout</th><th>+60s Markout</th></tr>
+        </thead>
+        <tbody id="tcaBody"></tbody>
+      </table>
+    </div>
+
+    <!-- Panel 3: Real-Time Market Surveillance CEP Alerts -->
+    <div class="panel">
+      <h2>
+        <span>Real-Time Surveillance CEP (`surveillance.q`)</span>
+        <span>Live Alerts</span>
+      </h2>
+      <table>
+        <thead>
+          <tr><th>Time</th><th>Type</th><th>Severity</th><th>Sym</th><th>Actor</th><th>Details</th></tr>
+        </thead>
+        <tbody id="alertBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    let ws = null;
+    const basePrices = { BTCUSD: 68500, ETHUSD: 3450, SOLUSD: 185, NVDA: 138, AAPL: 228 };
+
+    function connectKdb() {
+      const url = document.getElementById('wsUrl').value;
+      const sym = document.getElementById('symSelect').value;
+      try {
+        if (ws) ws.close();
+        ws = new WebSocket(url);
+        ws.onopen = () => {
+          const st = document.getElementById('connStatus');
+          st.textContent = 'CONNECTED TO kdb+ RTE (' + url + ')';
+          st.className = 'badge ok';
+          ws.send(JSON.stringify({ cmd: 'snapshot', sym }));
+        };
+        ws.onmessage = (ev) => {
+          const data = JSON.parse(ev.data);
+          renderFromKdb(data);
+        };
+        ws.onerror = () => setSimBadge();
+        ws.onclose = () => setSimBadge();
+      } catch (e) {
+        setSimBadge();
+      }
+    }
+
+    function setSimBadge() {
+      const st = document.getElementById('connStatus');
+      st.textContent = 'SIMULATED STREAM (WS Fallback)';
+      st.className = 'badge sim';
+    }
+
+    function renderLob(sym, mid, micro, spreadBps, imb, bp, bs, ap, as) {
+      document.getElementById('lobSym').textContent = sym;
+      document.getElementById('kpiMid').textContent = mid.toFixed(2);
+      document.getElementById('kpiMicro').textContent = micro.toFixed(2);
+      document.getElementById('kpiSpread').textContent = spreadBps.toFixed(2);
+      document.getElementById('kpiImb').textContent = (imb >= 0 ? '+' : '') + imb.toFixed(2);
+
+      const tbody = document.getElementById('lobBody');
+      tbody.innerHTML = '';
+      for (let i = 0; i < 5; i++) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>L${i + 1}</td>
+          <td>${(bs[i] || 0).toFixed(2)}</td>
+          <td class="bid-px">${(bp[i] || 0).toFixed(2)}</td>
+          <td class="ask-px">${(ap[i] || 0).toFixed(2)}</td>
+          <td>${(as[i] || 0).toFixed(2)}</td>
+        `;
+        tbody.appendChild(tr);
+      }
+    }
+
+    function renderFromKdb(d) {
+      if (d.lob) {
+        renderLob(d.sym, d.lob.mid, d.lob.microprice, d.lob.spreadBps, d.lob.imbalance,
+          d.lob.bidPrices, d.lob.bidSizes, d.lob.askPrices, d.lob.askSizes);
+      }
+    }
+
+    // Populate realistic initial TCA & Surveillance rows and update LOB every 600ms if not connected to live WS
+    const tcaRows = [
+      { id: 'PO_1001', sym: 'BTCUSD', algo: 'VWAP', side: 'B', qty: 15, is: -1.8, vwap: +0.4, m1: +0.9, m60: +2.1 },
+      { id: 'PO_1002', sym: 'ETHUSD', algo: 'TWAP', side: 'S', qty: 120, is: -2.4, vwap: -0.3, m1: -0.5, m60: +1.2 },
+      { id: 'PO_1003', sym: 'SOLUSD', algo: 'IS',   side: 'B', qty: 800, is: -0.9, vwap: +1.1, m1: +1.4, m60: +3.0 },
+      { id: 'PO_1004', sym: 'NVDA',   algo: 'POV',  side: 'B', qty: 2500, is: -3.1, vwap: -0.6, m1: +0.2, m60: +0.8 },
+      { id: 'PO_1005', sym: 'AAPL',   algo: 'VWAP', side: 'S', qty: 1800, is: -1.1, vwap: +0.7, m1: +0.6, m60: +1.5 }
+    ];
+
+    const alertRows = [
+      { time: '14:59:01.130', type: 'SPOOFING', sev: 'CRITICAL', sym: 'BTCUSD', actor: 'SPOOF_BOT_99', desc: 'Rapid large order ADD+CAN (45 BTC, 120ms lifetime)' },
+      { time: '14:59:02.250', type: 'LAYERING', sev: 'CRITICAL', sym: 'BTCUSD', actor: 'LAYER_HFT_07', desc: 'Multi-level book layering across 5 ask price levels' },
+      { time: '14:59:03.005', type: 'WASH_TRADE', sev: 'CRITICAL', sym: 'ETHUSD', actor: 'WASH_ACCT_42', desc: 'Self-trade execution: 18.5 ETH matched within 5ms' },
+      { time: '14:59:04.000', type: 'FAT_FINGER', sev: 'HIGH', sym: 'BTCUSD', actor: 'TRD_FATFINGER_01', desc: 'Off-market trade execution (+140.0 bps from rolling mid)' },
+      { time: '14:59:08.412', type: 'MOMENTUM_IGNITION', sev: 'MEDIUM', sym: 'SOLUSD', actor: 'MARKET_FLOW', desc: 'Volume & return z-score breakout (volZ=3.84)' }
+    ];
+
+    function initStaticTables() {
+      const tcaBody = document.getElementById('tcaBody');
+      tcaBody.innerHTML = tcaRows.map(r => `
+        <tr>
+          <td>${r.id}</td><td>${r.sym}</td><td>${r.algo}</td><td>${r.side}</td><td>${r.qty}</td>
+          <td class="${r.is >= 0 ? 'bid-px' : 'ask-px'}">${r.is.toFixed(2)}</td>
+          <td class="${r.vwap >= 0 ? 'bid-px' : 'ask-px'}">${(r.vwap >= 0 ? '+' : '') + r.vwap.toFixed(2)}</td>
+          <td class="${r.m1 >= 0 ? 'bid-px' : 'ask-px'}">${(r.m1 >= 0 ? '+' : '') + r.m1.toFixed(2)}</td>
+          <td class="${r.m60 >= 0 ? 'bid-px' : 'ask-px'}">${(r.m60 >= 0 ? '+' : '') + r.m60.toFixed(2)}</td>
+        </tr>
+      `).join('');
+
+      const alertBody = document.getElementById('alertBody');
+      alertBody.innerHTML = alertRows.map(a => `
+        <tr>
+          <td>${a.time}</td><td>${a.type}</td><td class="sev-${a.sev}">${a.sev}</td>
+          <td>${a.sym}</td><td>${a.actor}</td><td style="text-align:left;">${a.desc}</td>
+        </tr>
+      `).join('');
+    }
+
+    initStaticTables();
+
+    setInterval(() => {
+      if (ws && ws.readyState === WebSocket.OPEN) return;
+      const sym = document.getElementById('symSelect').value;
+      const base = basePrices[sym] || 100;
+      const mid = base + (Math.random() - 0.5) * base * 0.001;
+      const tick = base > 1000 ? 0.5 : 0.02;
+      const bp = [1,2,3,4,5].map(i => mid - i * tick);
+      const ap = [1,2,3,4,5].map(i => mid + i * tick);
+      const bs = [1,2,3,4,5].map(() => +(1 + Math.random() * 18).toFixed(2));
+      const as = [1,2,3,4,5].map(() => +(1 + Math.random() * 18).toFixed(2));
+      const imb = (bs[0] - as[0]) / (bs[0] + as[0]);
+      const micro = (bs[0] * ap[0] + as[0] * bp[0]) / (bs[0] + as[0]);
+      const spBps = 10000 * (ap[0] - bp[0]) / mid;
+      renderLob(sym, mid, micro, spBps, imb, bp, bs, ap, as);
+    }, 650);
+  </script>
+</body>
+</html>
